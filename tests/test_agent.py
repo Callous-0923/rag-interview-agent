@@ -10,7 +10,7 @@ from interview_agent.memory import MemoryManager
 from interview_agent.models import EvaluationReport
 from interview_agent.retrieval import AgenticRetriever
 from interview_agent.skills import SkillManager
-from interview_agent.workflow import run_mock_session
+from interview_agent.workflow import prepare_interview_question, run_interactive_turn, run_mock_session
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -64,6 +64,24 @@ class AgentTests(unittest.TestCase):
             text = (cfg.session_dir / "test_session.jsonl").read_text(encoding="utf-8")
             self.assertIn('"event": "turn"', text)
             self.assertIn("working_summary", text)
+
+    def test_interactive_turn_scores_user_answer(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = make_config(Path(td))
+            ensure_workspace(cfg)
+            ingest_notes(cfg)
+            question_state = prepare_interview_question(cfg, "RAG", 0)
+            result = run_interactive_turn(
+                cfg,
+                "interactive_test",
+                "RAG",
+                0,
+                question_state,
+                "我会用混合检索、rerank、证据评估和失败兜底来设计RAG系统。",
+            )
+            self.assertIn("question", result)
+            self.assertIn("report", result)
+            self.assertGreaterEqual(result["report"]["correctness"], 1)
 
     def test_repeated_weakness_creates_pending_skill(self) -> None:
         with tempfile.TemporaryDirectory() as td:

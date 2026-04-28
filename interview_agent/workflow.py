@@ -21,6 +21,8 @@ class GraphState(TypedDict, total=False):
     evidence_pack: dict[str, Any]
     report: dict[str, Any]
     created_skills: list[str]
+    selected_skills: list[str]
+    working_summary: str
 
 
 def run_review_turn(config: AgentConfig, state: GraphState) -> GraphState:
@@ -133,6 +135,49 @@ def run_mock_session(config: AgentConfig, session_id: str, topic: str, rounds: i
         )
     log.append("session_end", {"topic": topic, "rounds": rounds})
     return session_id
+
+
+def prepare_interview_question(config: AgentConfig, topic: str, round_index: int) -> GraphState:
+    retriever = AgenticRetriever(config)
+    llm = LLMClient.from_config(config)
+    skills = SkillManager(config)
+    seed_pack = retriever.retrieve(topic)
+    question = _llm_interview_question(topic, round_index, seed_pack, llm) or generate_question(topic, round_index, seed_pack)
+    selected_skills = skills.select(topic, question)
+    return {
+        "topic": topic,
+        "round_index": round_index,
+        "question": question,
+        "evidence_pack": seed_pack.model_dump(),
+        "selected_skills": selected_skills,
+    }
+
+
+def run_interactive_turn(
+    config: AgentConfig,
+    session_id: str,
+    topic: str,
+    round_index: int,
+    question_state: GraphState,
+    answer: str,
+) -> GraphState:
+    from .models import EvaluationReport
+
+    state: GraphState = {
+        "session_id": session_id,
+        "topic": topic,
+        "round_index": round_index,
+        "question": str(question_state["question"]),
+        "answer": answer,
+        "evidence_pack": question_state["evidence_pack"],
+        "selected_skills": question_state.get("selected_skills", []),
+    }
+    state = _node_evaluate(config, state)
+    repeated = MemoryManager(config).update_from_evaluation(topic, EvaluationReport.model_validate(state["report"]))
+    created = SkillManager(config).suggest_from_weaknesses(topic, repeated)
+    state["repeated_weaknesses"] = repeated
+    state["created_skills"] = [str(path) for path in created]
+    return state
 
 
 def _llm_interview_question(topic: str, round_index: int, pack, llm: LLMClient) -> str:

@@ -13,7 +13,7 @@ from .retrieval import AgenticRetriever
 from .sessions import SessionLog, list_sessions, new_session_id
 from .skills import SkillManager
 from .vision import run_vision_ingest
-from .workflow import run_mock_session, run_review_turn
+from .workflow import prepare_interview_question, run_interactive_turn, run_mock_session, run_review_turn
 
 app = typer.Typer(help="Local interview learning Agent.")
 skills_app = typer.Typer(help="Hermes-style skill commands.")
@@ -83,6 +83,80 @@ def mock(
 
 
 @app.command()
+def interview(
+    topic: str = typer.Option("RAG", "--topic", help="Interview topic"),
+    rounds: int = typer.Option(5, "--rounds", min=1, max=20, help="Number of turns"),
+    session: Optional[str] = typer.Option(None, "--session", help="Resume/write to session id"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+) -> None:
+    cfg = load_config(config)
+    ensure_workspace(cfg)
+    session_id = session or new_session_id()
+    log = SessionLog(cfg, session_id)
+    previous_turns = [event for event in log.read_events() if event.get("event") == "turn"]
+    questions = [str(event["payload"].get("question", "")) for event in previous_turns]
+    answers = [str(event["payload"].get("answer", "")) for event in previous_turns]
+    start_round = len(previous_turns)
+    if start_round == 0:
+        log.append("session_start", {"topic": topic, "rounds": rounds, "mode": "interactive"})
+    typer.echo(f"Interactive interview session: {session_id}")
+    typer.echo("Commands: :quit exit, :hint show evidence, :skip skip current question")
+
+    for idx in range(start_round, rounds):
+        typer.echo("")
+        typer.echo(f"Round {idx + 1}/{rounds}")
+        question_state = prepare_interview_question(cfg, topic, idx)
+        question = str(question_state["question"])
+        typer.echo(f"Interviewer: {question}")
+        answer = _read_multiline_answer()
+        if answer == ":quit":
+            log.append("session_pause", {"topic": topic, "round": idx + 1})
+            typer.echo(f"Paused. Resume with: python -m interview_agent.cli interview --topic {topic} --rounds {rounds} --session {session_id}")
+            return
+        if answer == ":hint":
+            _print_evidence_hint(question_state)
+            answer = _read_multiline_answer()
+            if answer == ":quit":
+                log.append("session_pause", {"topic": topic, "round": idx + 1})
+                typer.echo(f"Paused. Resume with: python -m interview_agent.cli interview --topic {topic} --rounds {rounds} --session {session_id}")
+                return
+        if answer == ":skip":
+            log.append("skip", {"round": idx + 1, "question": question})
+            typer.echo("Skipped.")
+            continue
+        if not answer.strip():
+            typer.echo("Empty answer skipped.")
+            continue
+
+        result = run_interactive_turn(cfg, session_id, topic, idx, question_state, answer)
+        questions.append(question)
+        answers.append(answer)
+        report = result["report"]
+        log.append(
+            "turn",
+            {
+                "round": idx + 1,
+                "question": question,
+                "answer": answer,
+                "evidence": result["evidence_pack"],
+                "selected_skills": result.get("selected_skills", []),
+                "report": report,
+                "created_skills": result.get("created_skills", []),
+                "working_summary": _build_working_summary(cfg, questions, answers),
+            },
+        )
+        _print_report(report)
+        if result.get("created_skills"):
+            typer.echo("Created pending skills:")
+            for item in result["created_skills"]:
+                typer.echo(f"- {item}")
+
+    log.append("session_end", {"topic": topic, "rounds": rounds, "mode": "interactive"})
+    typer.echo("")
+    typer.echo(f"Session saved: {cfg.session_dir / (session_id + '.jsonl')}")
+
+
+@app.command()
 def review(
     session: str = typer.Option(..., "--session", help="Session id or jsonl path"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
@@ -111,6 +185,67 @@ def review(
         typer.echo("Created pending skills:")
         for item in result["created_skills"]:
             typer.echo(f"- {item}")
+
+
+def _read_multiline_answer() -> str:
+    typer.echo("Your answer. Finish with an empty line.")
+    first = input("> ")
+    command = first.strip()
+    if command in {":quit", ":hint", ":skip"}:
+        return command
+    lines = [first]
+    while True:
+        line = input("> ")
+        if not line:
+            break
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _print_evidence_hint(question_state: dict) -> None:
+    evidence = (question_state.get("evidence_pack") or {}).get("evidence", [])
+    if not evidence:
+        typer.echo("No evidence found.")
+        return
+    typer.echo("Evidence hint:")
+    for idx, item in enumerate(evidence[:3], start=1):
+        typer.echo(f"{idx}. {item.get('title', '')} - {item.get('source_file', '')}")
+        snippet = str(item.get("snippet", "")).replace("\n", " ")
+        typer.echo(f"   {snippet[:220]}")
+
+
+def _print_report(report: dict) -> None:
+    scores = [
+        report.get("correctness", 0),
+        report.get("structure", 0),
+        report.get("engineering_depth", 0),
+        report.get("tradeoff_quality", 0),
+        report.get("source_grounding", 0),
+        report.get("anti_followup", 0),
+    ]
+    avg = round(sum(int(v) for v in scores) / len(scores), 2) if scores else 0
+    typer.echo("")
+    typer.echo(f"Score: {avg}/5")
+    missing = report.get("missing_points") or []
+    if missing:
+        typer.echo("Missing points:")
+        for item in missing[:5]:
+            typer.echo(f"- {item}")
+    better = str(report.get("better_answer") or "").strip()
+    if better:
+        typer.echo("Better answer:")
+        typer.echo(better)
+    tasks = report.get("next_tasks") or []
+    if tasks:
+        typer.echo("Next tasks:")
+        for item in tasks[:5]:
+            typer.echo(f"- {item}")
+
+
+def _build_working_summary(cfg, questions: list[str], answers: list[str]) -> str:
+    from .memory import MemoryManager
+
+    return MemoryManager(cfg).build_working_summary(questions, answers)
 
 
 @app.command("sessions")

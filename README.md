@@ -10,12 +10,35 @@ python -m interview_agent.cli init
 python -m interview_agent.cli vision ingest --limit 5 --update-index
 python -m interview_agent.cli ingest
 python -m interview_agent.cli ask "Agent记忆系统怎么设计"
+python -m interview_agent.cli interview --topic RAG --rounds 5
 python -m interview_agent.cli mock --topic RAG --rounds 3
 python -m interview_agent.cli review --session <session_id>
 python -m interview_agent.cli skills list
 ```
 
 当前实现默认使用 SQLite FTS/关键词检索，并在安装了 ChromaDB 时同步写入 `storage\chroma`；没有 ChromaDB 时不影响主闭环。
+
+## 交互式模拟面试
+
+`interview` 是真人练习入口。系统一次只问一个问题，等待你输入答案，空行结束本轮回答，然后自动评分、复盘并写入 session。
+
+```powershell
+python -m interview_agent.cli interview --topic RAG --rounds 5
+```
+
+可用命令：
+
+- `:hint`：查看本题检索到的证据提示
+- `:skip`：跳过当前问题
+- `:quit`：暂停 session
+
+继续同一个 session：
+
+```powershell
+python -m interview_agent.cli interview --topic RAG --rounds 5 --session <session_id>
+```
+
+`mock` 保留为自动示范模式：系统自己生成问题、示范回答、评分和复盘，适合批量生成训练样例。
 
 ## 视觉入库
 
