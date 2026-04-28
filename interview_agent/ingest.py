@@ -44,6 +44,10 @@ def ensure_workspace(config: AgentConfig) -> None:
     _ensure_file(config.memory_dir / "weakness_map.md", "# Weakness Map\n\n")
     _ensure_file(config.memory_dir / "user_profile.md", "# User Profile\n\n")
     _ensure_file(config.memory_dir / "topic_mastery.json", "{}\n")
+    _ensure_file(config.memory_dir / "growth_metrics.json", "{}\n")
+    _ensure_file(config.memory_dir / "review_schedule.json", "{}\n")
+    _ensure_file(config.memory_dir / "learning_gaps.json", "{}\n")
+    _ensure_file(config.memory_dir / "answer_history.jsonl", "")
 
 
 def _ensure_file(path: Path, content: str) -> None:

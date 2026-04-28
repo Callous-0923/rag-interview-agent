@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import AgentConfig
 from .ingest import ensure_workspace
-from .memory import MemoryManager
+from .memory import MemoryManager, knowledge_points_for_topic
 from .sessions import SessionLog, new_session_id
 from .workflow import GraphState, prepare_interview_question, run_interactive_turn
 
@@ -44,6 +44,10 @@ class _InterviewHandler(BaseHTTPRequestHandler):
                 self._send_json(self._next_question(body))
             elif self.path == "/api/answer":
                 self._send_json(self._submit_answer(body))
+            elif self.path == "/api/progress":
+                self._send_json(self._progress(body))
+            elif self.path == "/api/gaps":
+                self._send_json(self._gaps(body))
             else:
                 self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:
@@ -62,22 +66,42 @@ class _InterviewHandler(BaseHTTPRequestHandler):
     def _start_session(self, body: dict[str, Any]) -> dict[str, Any]:
         topic = str(body.get("topic") or "RAG").strip() or "RAG"
         rounds = max(1, min(20, int(body.get("rounds") or 5)))
+        difficulty = str(body.get("difficulty") or "medium").strip() or "medium"
+        knowledge_point = str(body.get("knowledge_point") or "auto").strip() or "auto"
+        review_first = bool(body.get("review_first", True))
         session_id = str(body.get("session_id") or "").strip() or new_session_id()
         log = SessionLog(self.agent_config, session_id)
         turns = _turn_events(log)
         if not turns:
-            log.append("session_start", {"topic": topic, "rounds": rounds, "mode": "web"})
+            log.append(
+                "session_start",
+                {
+                    "topic": topic,
+                    "rounds": rounds,
+                    "mode": "web",
+                    "difficulty": difficulty,
+                    "knowledge_point": knowledge_point,
+                    "review_first": review_first,
+                },
+            )
         return {
             "session_id": session_id,
             "topic": topic,
             "rounds": rounds,
+            "difficulty": difficulty,
+            "knowledge_point": knowledge_point,
+            "review_first": review_first,
             "completed_rounds": len(turns),
             "complete": len(turns) >= rounds,
+            "knowledge_points": knowledge_points_for_topic(topic),
         }
 
     def _next_question(self, body: dict[str, Any]) -> dict[str, Any]:
         topic = str(body.get("topic") or "RAG").strip() or "RAG"
         rounds = max(1, min(20, int(body.get("rounds") or 5)))
+        difficulty = str(body.get("difficulty") or "medium").strip() or "medium"
+        knowledge_point = str(body.get("knowledge_point") or "auto").strip() or "auto"
+        review_first = bool(body.get("review_first", True))
         session_id = str(body.get("session_id") or "").strip()
         if not session_id:
             raise ValueError("session_id is required")
@@ -85,7 +109,7 @@ class _InterviewHandler(BaseHTTPRequestHandler):
         round_index = len(_turn_events(log))
         if round_index >= rounds:
             return {"complete": True, "round": round_index, "rounds": rounds}
-        state = prepare_interview_question(self.agent_config, topic, round_index)
+        state = prepare_interview_question(self.agent_config, topic, round_index, difficulty, knowledge_point, review_first)
         PENDING_QUESTIONS[session_id] = state
         evidence = (state.get("evidence_pack") or {}).get("evidence", [])
         return {
@@ -94,6 +118,10 @@ class _InterviewHandler(BaseHTTPRequestHandler):
             "round": round_index + 1,
             "rounds": rounds,
             "question": state["question"],
+            "knowledge_point": state.get("knowledge_point", ""),
+            "question_type": state.get("question_type", ""),
+            "difficulty": state.get("difficulty", difficulty),
+            "is_review": state.get("is_review", False),
             "evidence": [
                 {
                     "title": item.get("title", ""),
@@ -134,8 +162,13 @@ class _InterviewHandler(BaseHTTPRequestHandler):
                 "answer": answer,
                 "evidence": result["evidence_pack"],
                 "selected_skills": result.get("selected_skills", []),
+                "knowledge_point": result.get("knowledge_point", ""),
+                "question_type": result.get("question_type", ""),
+                "difficulty": result.get("difficulty", ""),
+                "is_review": result.get("is_review", False),
                 "report": result["report"],
                 "created_skills": result.get("created_skills", []),
+                "memory_update": result.get("memory_update", {}),
                 "working_summary": working_summary,
             },
         )
@@ -149,10 +182,27 @@ class _InterviewHandler(BaseHTTPRequestHandler):
             "rounds": rounds,
             "complete": complete,
             "question": result["question"],
+            "knowledge_point": result.get("knowledge_point", ""),
+            "question_type": result.get("question_type", ""),
+            "difficulty": result.get("difficulty", ""),
+            "is_review": result.get("is_review", False),
             "report": result["report"],
             "created_skills": result.get("created_skills", []),
+            "memory_update": result.get("memory_update", {}),
+            "progress": MemoryManager(self.agent_config).get_progress_summary(topic),
+            "gaps": MemoryManager(self.agent_config).get_learning_gaps(topic),
             "session_file": str(log.path),
         }
+
+    def _progress(self, body: dict[str, Any]) -> dict[str, Any]:
+        topic = str(body.get("topic") or "RAG").strip() or "RAG"
+        data = MemoryManager(self.agent_config).get_progress_summary(topic)
+        data["knowledge_points"] = knowledge_points_for_topic(topic)
+        return data
+
+    def _gaps(self, body: dict[str, Any]) -> dict[str, Any]:
+        topic = str(body.get("topic") or "RAG").strip() or "RAG"
+        return MemoryManager(self.agent_config).get_learning_gaps(topic)
 
     def _send_html(self, html: str) -> None:
         payload = html.encode("utf-8")
@@ -227,7 +277,7 @@ INDEX_HTML = r"""<!doctype html>
       color: var(--muted);
       margin: 14px 0 6px;
     }
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -290,6 +340,36 @@ INDEX_HTML = r"""<!doctype html>
       font-weight: 700;
       margin-bottom: 8px;
     }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 10px;
+    }
+    .kp {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    .bar {
+      height: 7px;
+      background: #e8ecef;
+      border-radius: 99px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+    .fill { height: 100%; background: var(--accent); }
+    .status-unseen .fill { background: #a9b1b8; }
+    .status-weak .fill { background: #b85042; }
+    .status-improving .fill { background: #c18f1a; }
+    .status-mastered .fill { background: #2d7d46; }
     .error { color: var(--warn); }
     @media (max-width: 860px) {
       main { grid-template-columns: 1fr; }
@@ -308,6 +388,18 @@ INDEX_HTML = r"""<!doctype html>
       <input id="topic" value="RAG">
       <label for="rounds">Rounds</label>
       <input id="rounds" type="number" value="5" min="1" max="20">
+      <label for="difficulty">Difficulty</label>
+      <select id="difficulty">
+        <option value="easy">easy</option>
+        <option value="medium" selected>medium</option>
+        <option value="hard">hard</option>
+      </select>
+      <label for="knowledgePoint">Knowledge point</label>
+      <select id="knowledgePoint"><option value="auto">auto</option></select>
+      <label class="row" style="margin-top:14px">
+        <input id="reviewFirst" type="checkbox" checked style="width:auto">
+        <span>优先复习到期题</span>
+      </label>
       <label for="session">Session ID</label>
       <input id="session" placeholder="leave empty for new session">
       <div class="row" style="margin-top:16px">
@@ -322,6 +414,14 @@ INDEX_HTML = r"""<!doctype html>
       <div class="row" style="margin-top:12px">
         <button id="submitBtn" disabled>Submit Answer</button>
       </div>
+      <div class="panel">
+        <strong>知识点掌握</strong>
+        <div class="grid" id="mastery"></div>
+      </div>
+      <div class="panel">
+        <strong>补学建议</strong>
+        <div id="gaps" class="meta">Start a session to load suggestions.</div>
+      </div>
       <div class="evidence" id="evidence"></div>
       <div class="output" id="report">Review will appear here.</div>
     </section>
@@ -330,6 +430,8 @@ INDEX_HTML = r"""<!doctype html>
     let sessionId = "";
     let topic = "RAG";
     let rounds = 5;
+    let difficulty = "medium";
+    let knowledgePoint = "auto";
     const $ = id => document.getElementById(id);
 
     function setBusy(isBusy, text) {
@@ -368,8 +470,51 @@ INDEX_HTML = r"""<!doctype html>
       const missing = (r.missing_points || []).map(x => `- ${x}`).join("\n");
       const tasks = (r.next_tasks || []).map(x => `- ${x}`).join("\n");
       $("report").innerHTML =
-        `<div class="score">Score: ${avg}/5</div>` +
+        `<div class="score">Score: ${avg}/5 · ${escapeText(data.knowledge_point || "")} · ${escapeText(data.difficulty || "")}</div>` +
         `<div>${escapeText("Missing points:\n" + (missing || "- none") + "\n\nBetter answer:\n" + (r.better_answer || "") + "\n\nNext tasks:\n" + (tasks || "- none"))}</div>`;
+    }
+
+    function renderKnowledgeOptions(items) {
+      const current = $("knowledgePoint").value || "auto";
+      $("knowledgePoint").innerHTML = `<option value="auto">auto</option>`;
+      for (const item of items || []) {
+        const opt = document.createElement("option");
+        opt.value = item;
+        opt.textContent = item;
+        $("knowledgePoint").appendChild(opt);
+      }
+      $("knowledgePoint").value = [...$("knowledgePoint").options].some(o => o.value === current) ? current : "auto";
+    }
+
+    function renderProgress(data) {
+      const topicData = data.topics && data.topics[topic];
+      const points = topicData ? topicData.knowledge_points : [];
+      renderKnowledgeOptions(data.knowledge_points || points.map(x => x.knowledge_point));
+      $("mastery").innerHTML = "";
+      for (const item of points || []) {
+        const div = document.createElement("div");
+        div.className = `kp status-${item.status}`;
+        const pct = Math.max(0, Math.min(100, Number(item.recent_score || 0) * 20));
+        div.innerHTML = `<strong>${escapeText(item.knowledge_point)}</strong>
+          <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+          <div class="meta">${escapeText(item.status)} · attempts ${item.attempts} · recent ${item.recent_score || 0}</div>
+          <div class="meta">next due: ${escapeText(item.next_due_at || "-")}</div>`;
+        $("mastery").appendChild(div);
+      }
+    }
+
+    function renderGaps(data) {
+      const lines = (data.items || []).map(item =>
+        `• ${item.knowledge_point}: ${(item.suggestions || []).slice(0, 4).join(" / ")}\n  next: ${item.next_practice || ""}`
+      );
+      $("gaps").textContent = lines.join("\n\n") || "No suggestions yet.";
+    }
+
+    async function refreshProgress() {
+      const progress = await post("/api/progress", {topic});
+      renderProgress(progress);
+      const gaps = await post("/api/gaps", {topic});
+      renderGaps(gaps);
     }
 
     function escapeText(text) {
@@ -381,10 +526,20 @@ INDEX_HTML = r"""<!doctype html>
         setBusy(true, "Creating session...");
         topic = $("topic").value.trim() || "RAG";
         rounds = Number($("rounds").value || 5);
-        const data = await post("/api/session", {topic, rounds, session_id: $("session").value.trim()});
+        difficulty = $("difficulty").value;
+        knowledgePoint = $("knowledgePoint").value || "auto";
+        const data = await post("/api/session", {
+          topic,
+          rounds,
+          difficulty,
+          knowledge_point: knowledgePoint,
+          review_first: $("reviewFirst").checked,
+          session_id: $("session").value.trim()
+        });
         sessionId = data.session_id;
         $("session").value = sessionId;
         $("sessionMeta").textContent = `${sessionId} · ${data.completed_rounds}/${data.rounds}`;
+        await refreshProgress();
         await nextQuestion();
       } catch (err) {
         $("status").innerHTML = `<span class="error">${escapeText(err.message)}</span>`;
@@ -396,13 +551,23 @@ INDEX_HTML = r"""<!doctype html>
     async function nextQuestion() {
       try {
         setBusy(true, "Generating question...");
-        const data = await post("/api/question", {session_id: sessionId, topic, rounds});
+        difficulty = $("difficulty").value;
+        knowledgePoint = $("knowledgePoint").value || "auto";
+        const data = await post("/api/question", {
+          session_id: sessionId,
+          topic,
+          rounds,
+          difficulty,
+          knowledge_point: knowledgePoint,
+          review_first: $("reviewFirst").checked
+        });
         if (data.complete) {
           $("question").textContent = "Session complete.";
           $("submitBtn").disabled = true;
           return;
         }
-        $("question").textContent = `Round ${data.round}/${data.rounds}: ${data.question}`;
+        const marker = data.is_review ? "review" : "new";
+        $("question").textContent = `Round ${data.round}/${data.rounds} · ${data.knowledge_point} · ${data.difficulty} · ${marker}\n${data.question}`;
         $("answer").value = "";
         $("report").textContent = "Review will appear here.";
         $("sessionMeta").textContent = `${sessionId} · ${data.round - 1}/${data.rounds}`;
@@ -421,6 +586,8 @@ INDEX_HTML = r"""<!doctype html>
         setBusy(true, "Scoring answer...");
         const data = await post("/api/answer", {session_id: sessionId, topic, rounds, answer});
         renderReport(data);
+        if (data.progress) renderProgress(data.progress);
+        if (data.gaps) renderGaps(data.gaps);
         $("sessionMeta").textContent = `${sessionId} · ${data.round}/${data.rounds}`;
         $("status").textContent = data.complete ? `Complete. Saved: ${data.session_file}` : "Scored. Click Next.";
       } catch (err) {
@@ -433,6 +600,11 @@ INDEX_HTML = r"""<!doctype html>
     $("startBtn").addEventListener("click", startSession);
     $("nextBtn").addEventListener("click", nextQuestion);
     $("submitBtn").addEventListener("click", submitAnswer);
+    $("topic").addEventListener("change", async () => {
+      topic = $("topic").value.trim() || "RAG";
+      try { await refreshProgress(); } catch (err) {}
+    });
+    refreshProgress().catch(() => {});
   </script>
 </body>
 </html>

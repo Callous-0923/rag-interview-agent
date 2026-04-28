@@ -9,6 +9,7 @@ import typer
 from .config import load_config
 from .diagnose import diagnose as diagnose_agent
 from .ingest import ensure_workspace, ingest_notes
+from .memory import MemoryManager
 from .retrieval import AgenticRetriever
 from .sessions import SessionLog, list_sessions, new_session_id
 from .skills import SkillManager
@@ -87,6 +88,9 @@ def mock(
 def interview(
     topic: str = typer.Option("RAG", "--topic", help="Interview topic"),
     rounds: int = typer.Option(5, "--rounds", min=1, max=20, help="Number of turns"),
+    difficulty: str = typer.Option("medium", "--difficulty", help="easy, medium, or hard"),
+    knowledge_point: str = typer.Option("auto", "--knowledge-point", help="Knowledge point or auto"),
+    review_first: bool = typer.Option(True, "--review-first/--no-review-first", help="Prefer due review items first."),
     session: Optional[str] = typer.Option(None, "--session", help="Resume/write to session id"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
 ) -> None:
@@ -99,16 +103,29 @@ def interview(
     answers = [str(event["payload"].get("answer", "")) for event in previous_turns]
     start_round = len(previous_turns)
     if start_round == 0:
-        log.append("session_start", {"topic": topic, "rounds": rounds, "mode": "interactive"})
+        log.append(
+            "session_start",
+            {
+                "topic": topic,
+                "rounds": rounds,
+                "mode": "interactive",
+                "difficulty": difficulty,
+                "knowledge_point": knowledge_point,
+                "review_first": review_first,
+            },
+        )
     typer.echo(f"Interactive interview session: {session_id}")
     typer.echo("Commands: :quit exit, :hint show evidence, :skip skip current question")
 
     for idx in range(start_round, rounds):
         typer.echo("")
         typer.echo(f"Round {idx + 1}/{rounds}")
-        question_state = prepare_interview_question(cfg, topic, idx)
+        question_state = prepare_interview_question(cfg, topic, idx, difficulty, knowledge_point, review_first)
         question = str(question_state["question"])
-        typer.echo(f"Interviewer: {question}")
+        marker = "review" if question_state.get("is_review") else "new"
+        typer.echo(
+            f"Interviewer [{question_state.get('knowledge_point')} · {question_state.get('difficulty')} · {marker}]: {question}"
+        )
         answer = _read_multiline_answer()
         if answer == ":quit":
             log.append("session_pause", {"topic": topic, "round": idx + 1})
@@ -141,8 +158,13 @@ def interview(
                 "answer": answer,
                 "evidence": result["evidence_pack"],
                 "selected_skills": result.get("selected_skills", []),
+                "knowledge_point": result.get("knowledge_point", ""),
+                "question_type": result.get("question_type", ""),
+                "difficulty": result.get("difficulty", difficulty),
+                "is_review": result.get("is_review", False),
                 "report": report,
                 "created_skills": result.get("created_skills", []),
+                "memory_update": result.get("memory_update", {}),
                 "working_summary": _build_working_summary(cfg, questions, answers),
             },
         )
@@ -251,6 +273,53 @@ def _print_report(report: dict) -> None:
         typer.echo("Next tasks:")
         for item in tasks[:5]:
             typer.echo(f"- {item}")
+
+
+@app.command()
+def progress(
+    topic: Optional[str] = typer.Option(None, "--topic", help="Filter by topic"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+) -> None:
+    cfg = load_config(config)
+    summary = MemoryManager(cfg).get_progress_summary(topic)
+    for topic_name, item in summary["topics"].items():
+        typer.echo(f"{topic_name}: attempts={item['attempts']} recent_avg={item['avg_recent_score']}")
+        for kp in item["knowledge_points"]:
+            typer.echo(
+                f"- {kp['knowledge_point']}: {kp['status']} attempts={kp['attempts']} "
+                f"recent={kp['recent_score']} next_due={kp['next_due_at'] or '-'}"
+            )
+
+
+@app.command()
+def reviews(
+    topic: Optional[str] = typer.Option(None, "--topic", help="Filter by topic"),
+    difficulty: Optional[str] = typer.Option(None, "--difficulty", help="Filter by difficulty"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+) -> None:
+    cfg = load_config(config)
+    due = MemoryManager(cfg).get_due_reviews(topic, difficulty)
+    if not due:
+        typer.echo("No due reviews.")
+        return
+    for item in due:
+        typer.echo(
+            f"{item['next_due_at']} · {item['topic']} · {item['knowledge_point']} · "
+            f"{item['difficulty']} · score={item['last_score']}"
+        )
+
+
+@app.command()
+def gaps(
+    topic: str = typer.Option("RAG", "--topic", help="Topic"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+) -> None:
+    cfg = load_config(config)
+    data = MemoryManager(cfg).get_learning_gaps(topic)
+    typer.echo(f"Learning gaps for {data['topic']}:")
+    for item in data["items"]:
+        typer.echo(f"- {item['knowledge_point']}: {'; '.join(item['suggestions'])}")
+        typer.echo(f"  next: {item['next_practice']}")
 
 
 def _build_working_summary(cfg, questions: list[str], answers: list[str]) -> str:

@@ -11,9 +11,11 @@ python -m interview_agent.cli vision ingest --limit 5 --update-index
 python -m interview_agent.cli ingest
 python -m interview_agent.cli ask "Agent记忆系统怎么设计"
 python -m interview_agent.cli web
-python -m interview_agent.cli interview --topic RAG --rounds 5
+python -m interview_agent.cli interview --topic RAG --rounds 5 --difficulty medium
 python -m interview_agent.cli mock --topic RAG --rounds 3
 python -m interview_agent.cli review --session <session_id>
+python -m interview_agent.cli progress --topic RAG
+python -m interview_agent.cli gaps --topic RAG
 python -m interview_agent.cli skills list
 ```
 
@@ -24,7 +26,7 @@ python -m interview_agent.cli skills list
 `interview` 是真人练习入口。系统一次只问一个问题，等待你输入答案，空行结束本轮回答，然后自动评分、复盘并写入 session。
 
 ```powershell
-python -m interview_agent.cli interview --topic RAG --rounds 5
+python -m interview_agent.cli interview --topic RAG --rounds 5 --difficulty medium
 ```
 
 可用命令：
@@ -37,6 +39,20 @@ python -m interview_agent.cli interview --topic RAG --rounds 5
 
 ```powershell
 python -m interview_agent.cli interview --topic RAG --rounds 5 --session <session_id>
+```
+
+指定知识点和难度：
+
+```powershell
+python -m interview_agent.cli interview --topic RAG --knowledge-point Rerank --difficulty hard --rounds 3
+```
+
+查看成长、复习和补学建议：
+
+```powershell
+python -m interview_agent.cli progress --topic RAG
+python -m interview_agent.cli reviews --topic RAG
+python -m interview_agent.cli gaps --topic RAG
 ```
 
 `mock` 保留为自动示范模式：系统自己生成问题、示范回答、评分和复盘，适合批量生成训练样例。
@@ -56,6 +72,13 @@ http://127.0.0.1:8765
 ```
 
 页面支持创建/继续 session、生成下一题、提交回答、查看证据提示和评分复盘。后端仍然复用 CLI 的检索、出题、评分、记忆和技能沉淀逻辑。
+
+页面还支持：
+
+- 选择题目数、难度和知识点
+- 优先插入艾宾浩斯到期复习题
+- 查看每个知识点的掌握状态、最近得分和下次复习时间
+- 查看当前 topic 下还需要补充的学习内容
 
 ## 视觉入库
 
@@ -96,6 +119,10 @@ vision:
 ## 输出
 
 - `sessions\*.jsonl`：模拟面试与问答轨迹
+- `memory\answer_history.jsonl`：真实用户答题历史
+- `memory\growth_metrics.json`：按 topic/知识点/题型/难度聚合的成长数据
+- `memory\review_schedule.json`：艾宾浩斯复习队列
+- `memory\learning_gaps.json`：补学建议
 - `memory\weakness_map.md`：长期短板记忆
 - `memory\topic_mastery.json`：主题掌握度
 - `skills\pending\*\SKILL.md`：候选技能

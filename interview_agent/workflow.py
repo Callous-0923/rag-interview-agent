@@ -4,7 +4,7 @@ from typing import Any, TypedDict
 
 from .config import AgentConfig
 from .llm import LLMClient
-from .memory import MemoryManager
+from .memory import MemoryManager, infer_question_type, normalize_difficulty, normalize_topic
 from .questions import generate_question
 from .retrieval import AgenticRetriever
 from .scoring import evaluate_answer
@@ -23,6 +23,12 @@ class GraphState(TypedDict, total=False):
     created_skills: list[str]
     selected_skills: list[str]
     working_summary: str
+    knowledge_point: str
+    question_type: str
+    difficulty: str
+    is_review: bool
+    review_key: str
+    memory_update: dict[str, Any]
 
 
 def run_review_turn(config: AgentConfig, state: GraphState) -> GraphState:
@@ -137,12 +143,27 @@ def run_mock_session(config: AgentConfig, session_id: str, topic: str, rounds: i
     return session_id
 
 
-def prepare_interview_question(config: AgentConfig, topic: str, round_index: int) -> GraphState:
+def prepare_interview_question(
+    config: AgentConfig,
+    topic: str,
+    round_index: int,
+    difficulty: str = "medium",
+    knowledge_point: str = "auto",
+    review_first: bool = True,
+) -> GraphState:
     retriever = AgenticRetriever(config)
     llm = LLMClient.from_config(config)
     skills = SkillManager(config)
-    seed_pack = retriever.retrieve(topic)
-    question = _llm_interview_question(topic, round_index, seed_pack, llm) or generate_question(topic, round_index, seed_pack)
+    memory = MemoryManager(config)
+    topic = normalize_topic(topic)
+    difficulty = normalize_difficulty(difficulty)
+    selection = memory.select_knowledge_point(topic, difficulty, knowledge_point or "auto", review_first)
+    selected_kp = selection["knowledge_point"]
+    seed_pack = retriever.retrieve(f"{topic} {selected_kp}")
+    question = _llm_interview_question(topic, round_index, seed_pack, llm, difficulty, selected_kp, bool(selection["is_review"]))
+    if not question:
+        question = f"围绕知识点「{selected_kp}」，请用 {difficulty} 难度回答：{generate_question(topic, round_index, seed_pack)}"
+    question_type = infer_question_type(question)
     selected_skills = skills.select(topic, question)
     return {
         "topic": topic,
@@ -150,6 +171,11 @@ def prepare_interview_question(config: AgentConfig, topic: str, round_index: int
         "question": question,
         "evidence_pack": seed_pack.model_dump(),
         "selected_skills": selected_skills,
+        "knowledge_point": selected_kp,
+        "question_type": question_type,
+        "difficulty": difficulty,
+        "is_review": bool(selection["is_review"]),
+        "review_key": str(selection.get("review_key") or ""),
     }
 
 
@@ -165,30 +191,66 @@ def run_interactive_turn(
 
     state: GraphState = {
         "session_id": session_id,
-        "topic": topic,
+        "topic": normalize_topic(topic),
         "round_index": round_index,
         "question": str(question_state["question"]),
         "answer": answer,
         "evidence_pack": question_state["evidence_pack"],
         "selected_skills": question_state.get("selected_skills", []),
+        "knowledge_point": str(question_state.get("knowledge_point") or ""),
+        "question_type": str(question_state.get("question_type") or infer_question_type(str(question_state["question"]))),
+        "difficulty": normalize_difficulty(str(question_state.get("difficulty") or "medium")),
+        "is_review": bool(question_state.get("is_review", False)),
+        "review_key": str(question_state.get("review_key") or ""),
     }
     state = _node_evaluate(config, state)
-    repeated = MemoryManager(config).update_from_evaluation(topic, EvaluationReport.model_validate(state["report"]))
+    memory = MemoryManager(config)
+    report = EvaluationReport.model_validate(state["report"])
+    repeated = memory.update_from_evaluation(normalize_topic(topic), report)
+    memory_update = memory.record_user_answer(
+        session_id=session_id,
+        topic=normalize_topic(topic),
+        knowledge_point=state["knowledge_point"],
+        question_type=state["question_type"],
+        difficulty=state["difficulty"],
+        question=state["question"],
+        answer=answer,
+        report=report,
+        evidence=state["evidence_pack"],
+        is_review=state["is_review"],
+        review_key=state["review_key"],
+    )
     created = SkillManager(config).suggest_from_weaknesses(topic, repeated)
     state["repeated_weaknesses"] = repeated
     state["created_skills"] = [str(path) for path in created]
+    state["memory_update"] = memory_update
     return state
 
 
-def _llm_interview_question(topic: str, round_index: int, pack, llm: LLMClient) -> str:
+def _llm_interview_question(
+    topic: str,
+    round_index: int,
+    pack,
+    llm: LLMClient,
+    difficulty: str = "medium",
+    knowledge_point: str = "",
+    is_review: bool = False,
+) -> str:
     if not llm.enabled:
         return ""
     evidence = "\n".join(f"- {ev.title}: {ev.snippet}" for ev in pack.evidence[:4])
+    difficulty_hint = {
+        "easy": "概念、流程、关键区别，适合基础巩固。",
+        "medium": "工程方案、指标、取舍，适合常规面试。",
+        "hard": "复杂系统设计、故障场景、多约束权衡和追问空间。",
+    }.get(difficulty, "工程方案、指标、取舍，适合常规面试。")
+    review_hint = "这是到期复习题，请围绕同一知识点生成变体题，不要重复原题。" if is_review else "这是新练习题。"
     text = llm.complete(
         system="你是 AI Agent/RAG 方向面试官。只输出一个面试问题，不要解释。",
         user=(
-            f"主题：{topic}\n轮次：{round_index + 1}\n证据：\n{evidence}\n\n"
-            "请生成一个能考察工程理解、取舍和追问空间的问题。"
+            f"主题：{topic}\n知识点：{knowledge_point}\n难度：{difficulty} - {difficulty_hint}\n"
+            f"轮次：{round_index + 1}\n复习策略：{review_hint}\n证据：\n{evidence}\n\n"
+            "请生成一个紧扣该知识点、能考察工程理解、取舍和追问空间的问题。"
         ),
         max_output_tokens=1200,
     )

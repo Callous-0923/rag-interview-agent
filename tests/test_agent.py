@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from interview_agent.config import AgentConfig
@@ -81,7 +83,49 @@ class AgentTests(unittest.TestCase):
             )
             self.assertIn("question", result)
             self.assertIn("report", result)
+            self.assertIn("memory_update", result)
             self.assertGreaterEqual(result["report"]["correctness"], 1)
+            history = (cfg.memory_dir / "answer_history.jsonl").read_text(encoding="utf-8")
+            self.assertIn("混合检索", history)
+            self.assertTrue((cfg.memory_dir / "growth_metrics.json").exists())
+            self.assertTrue((cfg.memory_dir / "review_schedule.json").exists())
+
+    def test_knowledge_point_progress_and_review_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = make_config(Path(td))
+            ensure_workspace(cfg)
+            memory = MemoryManager(cfg)
+            report = EvaluationReport(
+                correctness=2,
+                structure=2,
+                engineering_depth=2,
+                tradeoff_quality=2,
+                source_grounding=2,
+                anti_followup=2,
+                missing_points=["缺少rerank和评估指标"],
+                better_answer="better",
+                next_tasks=["补充RAG评估"],
+            )
+            memory.record_user_answer(
+                session_id="s1",
+                topic="RAG",
+                knowledge_point="Rerank",
+                question_type="evaluation",
+                difficulty="hard",
+                question="如何评估Rerank效果？",
+                answer="answer",
+                report=report,
+                evidence={"evidence": []},
+            )
+            progress = memory.get_progress_summary("RAG")
+            row = [item for item in progress["topics"]["RAG"]["knowledge_points"] if item["knowledge_point"] == "Rerank"][0]
+            self.assertEqual(row["status"], "weak")
+            schedule = json.loads((cfg.memory_dir / "review_schedule.json").read_text(encoding="utf-8"))
+            next_due = list(schedule.values())[0]["next_due_at"]
+            self.assertEqual(next_due, (datetime.now() + timedelta(days=1)).date().isoformat())
+            gaps = memory.get_learning_gaps("RAG")
+            rerank = [item for item in gaps["items"] if item["knowledge_point"] == "Rerank"][0]
+            self.assertTrue(rerank["suggestions"])
 
     def test_repeated_weakness_creates_pending_skill(self) -> None:
         with tempfile.TemporaryDirectory() as td:
