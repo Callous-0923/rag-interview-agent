@@ -13,6 +13,7 @@ from .retrieval import AgenticRetriever
 from .sessions import SessionLog, list_sessions, new_session_id
 from .skills import SkillManager
 from .vision import run_vision_ingest
+from .web import run_web_app
 from .workflow import prepare_interview_question, run_interactive_turn, run_mock_session, run_review_turn
 
 app = typer.Typer(help="Local interview learning Agent.")
@@ -185,6 +186,16 @@ def review(
         typer.echo("Created pending skills:")
         for item in result["created_skills"]:
             typer.echo(f"- {item}")
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
+    port: int = typer.Option(8765, "--port", min=1024, max=65535, help="Bind port"),
+    config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+) -> None:
+    cfg = load_config(config)
+    run_web_app(cfg, host=host, port=port)
 
 
 def _read_multiline_answer() -> str:

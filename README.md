@@ -10,6 +10,7 @@ python -m interview_agent.cli init
 python -m interview_agent.cli vision ingest --limit 5 --update-index
 python -m interview_agent.cli ingest
 python -m interview_agent.cli ask "Agent记忆系统怎么设计"
+python -m interview_agent.cli web
 python -m interview_agent.cli interview --topic RAG --rounds 5
 python -m interview_agent.cli mock --topic RAG --rounds 3
 python -m interview_agent.cli review --session <session_id>
@@ -39,6 +40,22 @@ python -m interview_agent.cli interview --topic RAG --rounds 5 --session <sessio
 ```
 
 `mock` 保留为自动示范模式：系统自己生成问题、示范回答、评分和复盘，适合批量生成训练样例。
+
+## Web 页面
+
+启动本地前端页面：
+
+```powershell
+python -m interview_agent.cli web
+```
+
+打开：
+
+```text
+http://127.0.0.1:8765
+```
+
+页面支持创建/继续 session、生成下一题、提交回答、查看证据提示和评分复盘。后端仍然复用 CLI 的检索、出题、评分、记忆和技能沉淀逻辑。
 
 ## 视觉入库
 
