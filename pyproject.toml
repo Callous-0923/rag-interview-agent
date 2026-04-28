@@ -1,0 +1,22 @@
+[project]
+name = "rag-interview-agent"
+version = "0.1.0"
+description = "Local interview learning agent with Agentic RAG, memory, and Hermes-style skills."
+requires-python = ">=3.10"
+dependencies = [
+  "typer>=0.9",
+  "PyYAML>=6.0",
+  "pydantic>=2.0",
+  "langgraph>=0.2",
+  "openai>=1.0",
+]
+
+[project.optional-dependencies]
+vector = ["chromadb>=0.5"]
+
+[project.scripts]
+agent = "interview_agent.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["interview_agent*"]

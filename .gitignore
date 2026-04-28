@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime state
+storage/
+sessions/
+memory/
+skills/pending/
+skills/active/
+
+# Generated vision/OCR artifacts and usage logs
+vision/cache/
+vision/xhs_image_notes/
+vision/usage.jsonl
+
+# Local profile/JD files
+profile/
+jd/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

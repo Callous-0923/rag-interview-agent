@@ -1,0 +1,32 @@
+project_root: "D:/files/knowledge/04_Interview_Agent"
+knowledge_root: "D:/files/knowledge"
+notes_dir: "D:/files/knowledge/01_XHS_Notes/notes"
+notes_dirs:
+  - "D:/files/knowledge/01_XHS_Notes/notes"
+  - "D:/files/knowledge/04_Interview_Agent/vision/xhs_image_notes"
+  - "D:/files/knowledge/00_Inbox/实习面经/01_notes"
+topic_index: "D:/files/knowledge/01_XHS_Notes/indexes/topic_index.md"
+topic_assignments: "D:/files/knowledge/01_XHS_Notes/indexes/topic_assignments.csv"
+graph_json: "D:/files/knowledge/01_XHS_Notes/graphify-out/graph.json"
+graph_jsons:
+  - "D:/files/knowledge/01_XHS_Notes/graphify-out/graph.json"
+  - "D:/files/knowledge/00_Inbox/实习面经/graphify-out/graph.json"
+storage_dir: "D:/files/knowledge/04_Interview_Agent/storage"
+chroma_dir: "D:/files/knowledge/04_Interview_Agent/storage/chroma"
+chroma_collection: "interview_agent_chunks"
+session_dir: "D:/files/knowledge/04_Interview_Agent/sessions"
+memory_dir: "D:/files/knowledge/04_Interview_Agent/memory"
+skills_dir: "D:/files/knowledge/04_Interview_Agent/skills"
+vision_dir: "D:/files/knowledge/04_Interview_Agent/vision"
+vision:
+  enabled: true
+  usage_log: "D:/files/knowledge/04_Interview_Agent/vision/usage.jsonl"
+chunk_size: 900
+chunk_overlap: 120
+max_rewrites: 2
+top_k: 8
+llm:
+  provider: "openai_compatible"
+  api_base: "https://ark.cn-beijing.volces.com/api/v3"
+  api_key_env: "ARK_API_KEY"
+  model: "doubao-seed-2-0-pro-260215"

@@ -1,0 +1,62 @@
+# 面试学习 Agent
+
+本项目是一个本地 CLI + 文件存储的面试学习 Agent，读取上层知识库中的小红书笔记、索引和 Graphify 图谱，实现 Agentic RAG、模拟面试、复盘记忆和 Hermes 风格技能沉淀。
+
+## 快速开始
+
+```powershell
+cd D:\files\knowledge\04_Interview_Agent
+python -m interview_agent.cli init
+python -m interview_agent.cli vision ingest --limit 5 --update-index
+python -m interview_agent.cli ingest
+python -m interview_agent.cli ask "Agent记忆系统怎么设计"
+python -m interview_agent.cli mock --topic RAG --rounds 3
+python -m interview_agent.cli review --session <session_id>
+python -m interview_agent.cli skills list
+```
+
+当前实现默认使用 SQLite FTS/关键词检索，并在安装了 ChromaDB 时同步写入 `storage\chroma`；没有 ChromaDB 时不影响主闭环。
+
+## 视觉入库
+
+小红书图片不会直接在问答时反复送入模型，而是先转成可检索 Markdown：
+
+```powershell
+python -m interview_agent.cli vision ingest --limit 20 --update-index
+```
+
+- 输出目录：`vision\xhs_image_notes`
+- 缓存目录：`vision\cache`
+- token 日志：`vision\usage.jsonl`
+- `--dry-run` 只统计待处理图片
+- `--force` 会重新调用视觉模型覆盖已有结果
+- `--update-index` 会在生成 Markdown 后重建 SQLite/Chroma 索引
+
+可在 `config.yaml` 中关闭图片处理：
+
+```yaml
+vision:
+  enabled: false
+```
+
+重建小红书 Graphify 图谱时，`..\_scripts\build_xhs_graphify_graph.py` 会自动读取这些视觉 Markdown，将图片节点连接到 `vision_text` 节点。
+
+## 数据源
+
+默认只读读取：
+
+- `..\01_XHS_Notes\notes\*.md`
+- `.\vision\xhs_image_notes\*.md`
+- `..\00_Inbox\实习面经\01_notes\**\*.md`
+- `..\01_XHS_Notes\indexes\topic_index.md`
+- `..\01_XHS_Notes\indexes\topic_assignments.csv`
+- `..\01_XHS_Notes\graphify-out\graph.json`
+- `..\00_Inbox\实习面经\graphify-out\graph.json`
+
+## 输出
+
+- `sessions\*.jsonl`：模拟面试与问答轨迹
+- `memory\weakness_map.md`：长期短板记忆
+- `memory\topic_mastery.json`：主题掌握度
+- `skills\pending\*\SKILL.md`：候选技能
+- `skills\active\*\SKILL.md`：已启用技能
