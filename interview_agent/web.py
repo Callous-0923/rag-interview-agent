@@ -533,9 +533,19 @@ INDEX_HTML = r"""<!doctype html>
       const avg = scores.length ? (scores.reduce((a,b) => a + b, 0) / scores.length).toFixed(2) : "0.00";
       const missing = (r.missing_points || []).map(x => `- ${x}`).join("\n");
       const tasks = (r.next_tasks || []).map(x => `- ${x}`).join("\n");
-      $("report").innerHTML =
-        `<div class="score">Score: ${avg}/5 · ${escapeText(data.knowledge_point || "")} · ${escapeText(data.difficulty || "")}</div>` +
-        `<div>${escapeText("Missing points:\n" + (missing || "- none") + "\n\nBetter answer:\n" + (r.better_answer || "") + "\n\nNext tasks:\n" + (tasks || "- none"))}</div>`;
+      const title = `Score: ${avg}/5 · ${data.knowledge_point || ""} · ${data.difficulty || ""}`;
+      $("report").textContent =
+        `${title}\n\n` +
+        `Missing points:\n${missing || "- none"}\n\n` +
+        `Better answer:\n${formatBetterAnswer(r.better_answer || "")}\n\n` +
+        `Next tasks:\n${tasks || "- none"}`;
+    }
+
+    function formatBetterAnswer(text) {
+      const value = String(text || "").trim();
+      if (!value) return "- none";
+      if (value.includes("\n")) return value;
+      return value.replace(/\s+(\d+[.、])/g, "\n$1").trim();
     }
 
     function renderKnowledgeOptions(items) {

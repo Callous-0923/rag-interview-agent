@@ -77,7 +77,11 @@ def _evaluate_with_llm(
             '  "missing_points": ["..."],\n'
             '  "better_answer": "...",\n'
             '  "next_tasks": ["..."]\n'
-            "}"
+            "}\n\n"
+            "字段要求：\n"
+            "- missing_points 和 next_tasks 必须是短句数组。\n"
+            "- better_answer 必须是适合写入 .md 的多行文本，使用 1. 2. 3. 编号分段。\n"
+            "- better_answer 不要写成一整段，必须覆盖结论、关键机制、工程取舍和评估/兜底。"
         ),
         max_output_tokens=4096,
     )
@@ -102,8 +106,10 @@ def _evaluate_with_llm(
 def build_better_answer(question: str, evidence_pack: EvidencePack) -> str:
     sources = "、".join(ev.title for ev in evidence_pack.evidence[:3]) or "本地知识库"
     return (
-        f"建议按“结论 -> 架构/流程 -> 关键取舍 -> 评估指标 -> 失败兜底”回答「{question}」。"
-        f"先给直接结论，再引用 {sources} 中的证据，最后补充你在项目中如何落地和如何评估。"
+        f"1. 先给直接结论：围绕「{question}」明确系统目标、适用边界和核心判断。\n"
+        f"2. 展开架构或流程：引用 {sources} 中的证据，说明关键模块、数据流和执行链路。\n"
+        "3. 补充工程取舍：说明成本、延迟、准确率、可维护性和失败兜底方案。\n"
+        "4. 给出评估方式：覆盖离线指标、线上观测、错误归因和下一步迭代动作。"
     )
 
 

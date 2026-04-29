@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from interview_agent.config import AgentConfig
+from interview_agent.cli import _format_report_markdown
 from interview_agent.ingest import ensure_workspace, ingest_notes
 from interview_agent.memory import MemoryManager
 from interview_agent.models import EvaluationReport
@@ -166,6 +167,24 @@ class AgentTests(unittest.TestCase):
             self.assertFalse((cfg.memory_dir / "answer_history.jsonl").read_text(encoding="utf-8").strip())
             events = log.read_events()
             self.assertEqual(events[0]["event"], "skip")
+
+    def test_report_formatter_is_markdown_friendly(self) -> None:
+        report = EvaluationReport(
+            correctness=1,
+            structure=1,
+            engineering_depth=1,
+            tradeoff_quality=1,
+            source_grounding=1,
+            anti_followup=1,
+            missing_points=["missing structure", "missing metrics"],
+            better_answer="1. State the conclusion. 2. Explain the mechanism. 3. Add tradeoffs.",
+            next_tasks=["practice a two minute answer"],
+        ).model_dump()
+        text = _format_report_markdown(report, "Memory", "easy")
+        self.assertIn("Score: 1.00/5 · Memory · easy", text)
+        self.assertIn("\n\nMissing points:\n- missing structure\n- missing metrics", text)
+        self.assertIn("\n\nBetter answer:\n1. State the conclusion.\n2. Explain the mechanism.", text)
+        self.assertIn("\n\nNext tasks:\n- practice a two minute answer", text)
 
     def test_repeated_weakness_creates_pending_skill(self) -> None:
         with tempfile.TemporaryDirectory() as td:

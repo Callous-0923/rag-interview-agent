@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 from typing import Optional
 
@@ -172,7 +173,7 @@ def interview(
                 "working_summary": _build_working_summary(cfg, questions, answers),
             },
         )
-        _print_report(report)
+        _print_report(report, result.get("knowledge_point", ""), result.get("difficulty", difficulty))
         if result.get("created_skills"):
             typer.echo("Created pending skills:")
             for item in result["created_skills"]:
@@ -207,7 +208,7 @@ def review(
     )
     log.append("review", result)
     typer.echo("Review complete.")
-    typer.echo(result.get("report", {}))
+    _print_report(result.get("report", {}))
     if result.get("created_skills"):
         typer.echo("Created pending skills:")
         for item in result["created_skills"]:
@@ -251,7 +252,12 @@ def _print_evidence_hint(question_state: dict) -> None:
         typer.echo(f"   {snippet[:220]}")
 
 
-def _print_report(report: dict) -> None:
+def _print_report(report: dict, knowledge_point: object = "", difficulty: object = "") -> None:
+    typer.echo("")
+    typer.echo(_format_report_markdown(report, knowledge_point, difficulty))
+
+
+def _format_report_markdown(report: dict, knowledge_point: object = "", difficulty: object = "") -> str:
     scores = [
         report.get("correctness", 0),
         report.get("structure", 0),
@@ -260,23 +266,44 @@ def _print_report(report: dict) -> None:
         report.get("source_grounding", 0),
         report.get("anti_followup", 0),
     ]
-    avg = round(sum(int(v) for v in scores) / len(scores), 2) if scores else 0
-    typer.echo("")
-    typer.echo(f"Score: {avg}/5")
+    avg = _average_score(scores)
+    labels = [str(value).strip() for value in [knowledge_point, difficulty] if str(value).strip()]
+    title = f"Score: {avg:.2f}/5"
+    if labels:
+        title += " · " + " · ".join(labels)
+
     missing = report.get("missing_points") or []
-    if missing:
-        typer.echo("Missing points:")
-        for item in missing[:5]:
-            typer.echo(f"- {item}")
+    missing_text = "\n".join(f"- {item}" for item in missing[:8]) or "- none"
     better = str(report.get("better_answer") or "").strip()
-    if better:
-        typer.echo("Better answer:")
-        typer.echo(better)
+    better_text = _format_better_answer(better)
     tasks = report.get("next_tasks") or []
-    if tasks:
-        typer.echo("Next tasks:")
-        for item in tasks[:5]:
-            typer.echo(f"- {item}")
+    tasks_text = "\n".join(f"- {item}" for item in tasks[:8]) or "- none"
+    return (
+        f"{title}\n\n"
+        f"Missing points:\n{missing_text}\n\n"
+        f"Better answer:\n{better_text}\n\n"
+        f"Next tasks:\n{tasks_text}"
+    )
+
+
+def _average_score(scores: list[object]) -> float:
+    values = []
+    for score in scores:
+        try:
+            values.append(float(score))
+        except (TypeError, ValueError):
+            values.append(0.0)
+    return round(sum(values) / len(values), 2) if values else 0.0
+
+
+def _format_better_answer(text: str) -> str:
+    text = text.strip()
+    if not text:
+        return "- none"
+    if "\n" in text:
+        return text
+    normalized = re.sub(r"\s+(\d+[.、])", r"\n\1", text)
+    return normalized.strip()
 
 
 @app.command()
