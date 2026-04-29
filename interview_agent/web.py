@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import AgentConfig
 from .ingest import ensure_workspace
-from .memory import MemoryManager, knowledge_points_for_topic
+from .memory import MemoryManager, TRAINING_TOPICS, knowledge_points_for_topic
 from .sessions import SessionLog, new_session_id
 from .workflow import GraphState, prepare_interview_question, run_interactive_turn
 
@@ -95,6 +95,7 @@ class _InterviewHandler(BaseHTTPRequestHandler):
             "review_first": review_first,
             "completed_rounds": len(turns),
             "complete": len(turns) >= rounds,
+            "topics": list(TRAINING_TOPICS),
             "knowledge_points": knowledge_points_for_topic(topic),
         }
 
@@ -247,6 +248,7 @@ class _InterviewHandler(BaseHTTPRequestHandler):
     def _progress(self, body: dict[str, Any]) -> dict[str, Any]:
         topic = str(body.get("topic") or "RAG").strip() or "RAG"
         data = MemoryManager(self.agent_config).get_progress_summary(topic)
+        data["topics_list"] = list(TRAINING_TOPICS)
         data["knowledge_points"] = knowledge_points_for_topic(topic)
         return data
 
@@ -438,8 +440,14 @@ INDEX_HTML = r"""<!doctype html>
   </header>
   <main>
     <aside>
-      <label for="topic">Topic</label>
-      <input id="topic" value="RAG">
+      <label for="topic">训练方向</label>
+      <select id="topic">
+        <option value="RAG" selected>RAG</option>
+        <option value="Agent">Agent</option>
+        <option value="Harness">Harness</option>
+        <option value="大模型">大模型</option>
+        <option value="Python">Python</option>
+      </select>
       <label for="rounds">Rounds</label>
       <input id="rounds" type="number" value="5" min="1" max="20">
       <label for="difficulty">Difficulty</label>
@@ -543,6 +551,7 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     function renderProgress(data) {
+      renderTopicOptions(data.topics_list || ["RAG","Agent","Harness","大模型","Python"]);
       const topicData = data.topics && data.topics[topic];
       const points = topicData ? topicData.knowledge_points : [];
       renderKnowledgeOptions(data.knowledge_points || points.map(x => x.knowledge_point));
@@ -557,6 +566,18 @@ INDEX_HTML = r"""<!doctype html>
           <div class="meta">next due: ${escapeText(item.next_due_at || "-")}</div>`;
         $("mastery").appendChild(div);
       }
+    }
+
+    function renderTopicOptions(items) {
+      const current = $("topic").value || topic || "RAG";
+      $("topic").innerHTML = "";
+      for (const item of items || []) {
+        const opt = document.createElement("option");
+        opt.value = item;
+        opt.textContent = item;
+        $("topic").appendChild(opt);
+      }
+      $("topic").value = [...$("topic").options].some(o => o.value === current) ? current : "RAG";
     }
 
     function renderGaps(data) {

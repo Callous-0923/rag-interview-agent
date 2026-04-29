@@ -1,6 +1,6 @@
 # 面试学习 Agent
 
-本项目是一个本地 CLI + 文件存储的面试学习 Agent，读取上层知识库中的小红书笔记、索引和 Graphify 图谱，实现 Agentic RAG、模拟面试、复盘记忆和 Hermes 风格技能沉淀。
+本项目是一个本地 CLI + 文件存储的面试学习 Agent，读取上层知识库中的小红书笔记、索引和 Graphify 图谱，实现 Agentic RAG、模拟面试、复盘记忆和技能沉淀。
 
 ## 快速开始
 
@@ -24,6 +24,14 @@ python -m interview_agent.cli skills list
 ## 交互式模拟面试
 
 `interview` 是真人练习入口。系统一次只问一个问题，等待你输入答案，空行结束本轮回答，然后自动评分、复盘并写入 session。
+
+内置训练方向：
+
+- `RAG`
+- `Agent`
+- `Harness`
+- `大模型`
+- `Python`
 
 ```powershell
 python -m interview_agent.cli interview --topic RAG --rounds 5 --difficulty medium
@@ -73,7 +81,7 @@ python -m interview_agent.cli web
 http://127.0.0.1:8765
 ```
 
-页面支持创建/继续 session、生成下一题、提交回答、查看证据提示和评分复盘。后端仍然复用 CLI 的检索、出题、评分、记忆和技能沉淀逻辑。
+页面支持创建/继续 session、选择训练方向、生成下一题、提交回答、查看证据提示和评分复盘。后端仍然复用 CLI 的检索、出题、评分、记忆和技能沉淀逻辑。
 
 页面还支持：
 

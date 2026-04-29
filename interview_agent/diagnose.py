@@ -6,7 +6,7 @@ from .config import AgentConfig
 from .retrieval import AgenticRetriever
 
 
-DEFAULT_TOPICS = ["Agent", "RAG", "记忆", "Hermes", "工程开发", "AI应用"]
+DEFAULT_TOPICS = ["Agent", "RAG", "Harness", "大模型", "Python", "工程开发", "AI应用"]
 
 
 def diagnose(config: AgentConfig, role: str, jd: Path | None = None, resume: Path | None = None) -> str:

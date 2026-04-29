@@ -117,7 +117,7 @@ class AgenticRetriever:
 
     def _infer_topics(self, query: str, graph_terms: list[str]) -> list[str]:
         topics = []
-        for topic in ["Agent", "RAG", "大模型", "工程开发", "面经", "求职实习", "算法", "产品运营"]:
+        for topic in ["Agent", "RAG", "Harness", "大模型", "Python", "工程开发", "面经", "求职实习", "算法", "产品运营"]:
             if topic.lower() in query.lower() or topic in graph_terms:
                 topics.append(topic)
         if "记忆" in query or "memory" in query.lower():

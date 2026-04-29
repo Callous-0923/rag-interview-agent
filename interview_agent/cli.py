@@ -18,7 +18,7 @@ from .web import run_web_app
 from .workflow import prepare_interview_question, run_interactive_turn, run_mock_session, run_review_turn
 
 app = typer.Typer(help="Local interview learning Agent.")
-skills_app = typer.Typer(help="Hermes-style skill commands.")
+skills_app = typer.Typer(help="Skill commands.")
 vision_app = typer.Typer(help="Vision OCR ingestion commands.")
 app.add_typer(skills_app, name="skills")
 app.add_typer(vision_app, name="vision")
@@ -72,7 +72,7 @@ def diagnose(
 
 @app.command()
 def mock(
-    topic: str = typer.Option("RAG", "--topic", help="Interview topic"),
+    topic: str = typer.Option("RAG", "--topic", help="Training topic: RAG, Agent, Harness, 大模型, or Python"),
     rounds: int = typer.Option(3, "--rounds", min=1, max=20, help="Number of turns"),
     session: Optional[str] = typer.Option(None, "--session", help="Resume/write to session id"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
@@ -86,7 +86,7 @@ def mock(
 
 @app.command()
 def interview(
-    topic: str = typer.Option("RAG", "--topic", help="Interview topic"),
+    topic: str = typer.Option("RAG", "--topic", help="Training topic: RAG, Agent, Harness, 大模型, or Python"),
     rounds: int = typer.Option(5, "--rounds", min=1, max=20, help="Number of turns"),
     difficulty: str = typer.Option("medium", "--difficulty", help="easy, medium, or hard"),
     knowledge_point: str = typer.Option("auto", "--knowledge-point", help="Knowledge point or auto"),
@@ -281,7 +281,7 @@ def _print_report(report: dict) -> None:
 
 @app.command()
 def progress(
-    topic: Optional[str] = typer.Option(None, "--topic", help="Filter by topic"),
+    topic: Optional[str] = typer.Option(None, "--topic", help="Filter by training topic"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
 ) -> None:
     cfg = load_config(config)
@@ -297,7 +297,7 @@ def progress(
 
 @app.command()
 def reviews(
-    topic: Optional[str] = typer.Option(None, "--topic", help="Filter by topic"),
+    topic: Optional[str] = typer.Option(None, "--topic", help="Filter by training topic"),
     difficulty: Optional[str] = typer.Option(None, "--difficulty", help="Filter by difficulty"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
 ) -> None:
@@ -315,7 +315,7 @@ def reviews(
 
 @app.command()
 def gaps(
-    topic: str = typer.Option("RAG", "--topic", help="Topic"),
+    topic: str = typer.Option("RAG", "--topic", help="Training topic"),
     config: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
 ) -> None:
     cfg = load_config(config)

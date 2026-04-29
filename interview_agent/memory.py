@@ -38,8 +38,38 @@ KNOWLEDGE_POINTS: dict[str, list[str]] = {
         "失败恢复",
         "评估体系",
     ],
-    "Hermes": ["技能机制", "Memory", "Context Engineering", "失败恢复", "评估体系"],
+    "Harness": [
+        "Harness架构",
+        "JIT Context",
+        "上下文装配",
+        "工具编排",
+        "代码库检索",
+        "执行轨迹",
+        "评估与观测",
+    ],
+    "大模型": [
+        "Transformer基础",
+        "Attention机制",
+        "模型微调",
+        "对齐方法",
+        "长上下文",
+        "多模态模型",
+        "推理优化",
+        "模型评估",
+    ],
+    "Python": [
+        "基础语法",
+        "数据结构",
+        "面向对象",
+        "异步与并发",
+        "文件与IO",
+        "测试与调试",
+        "工程化",
+        "算法实现",
+    ],
 }
+
+TRAINING_TOPICS = tuple(KNOWLEDGE_POINTS.keys())
 
 SYLLABUS_GAPS: dict[str, list[str]] = {
     "知识库构建": ["数据清洗", "元数据设计", "增量更新", "权限过滤"],
@@ -63,6 +93,29 @@ SYLLABUS_GAPS: dict[str, list[str]] = {
     "LangGraph工作流": ["节点状态", "分支恢复", "checkpoint", "工具节点"],
     "失败恢复": ["重试", "fallback", "人工确认", "回滚"],
     "评估体系": ["任务成功率", "工具调用准确率", "忠实度", "端到端稳定性"],
+    "Harness架构": ["任务目标", "上下文管理", "工具层", "执行循环"],
+    "JIT Context": ["按需探索", "上下文预算", "工具调用策略", "停止条件"],
+    "上下文装配": ["证据选择", "上下文压缩", "引用保留", "污染控制"],
+    "工具编排": ["工具路由", "参数构造", "异常恢复", "权限边界"],
+    "代码库检索": ["符号搜索", "调用链", "依赖关系", "增量索引"],
+    "执行轨迹": ["中间日志", "可恢复状态", "回放", "审计"],
+    "评估与观测": ["任务成功率", "延迟", "成本", "工具错误率"],
+    "Transformer基础": ["Encoder/Decoder", "位置编码", "残差连接", "LayerNorm"],
+    "Attention机制": ["QKV", "缩放点积注意力", "多头注意力", "mask"],
+    "模型微调": ["SFT", "数据构造", "LoRA", "过拟合控制"],
+    "对齐方法": ["RLHF", "DPO", "PPO", "偏好数据"],
+    "长上下文": ["RoPE", "上下文压缩", "注意力复杂度", "检索增强"],
+    "多模态模型": ["视觉编码", "图文对齐", "OCR", "多模态评估"],
+    "推理优化": ["KV Cache", "量化", "批处理", "延迟优化"],
+    "模型评估": ["基准集", "人工评估", "鲁棒性", "安全性"],
+    "基础语法": ["变量类型", "控制流", "函数", "异常处理"],
+    "数据结构": ["list/dict/set", "复杂度", "堆栈队列", "排序"],
+    "面向对象": ["类与实例", "继承", "协议", "数据模型"],
+    "异步与并发": ["asyncio", "线程", "进程", "锁与队列"],
+    "文件与IO": ["路径处理", "编码", "JSON/CSV", "流式读写"],
+    "测试与调试": ["unittest", "pytest", "断点调试", "日志"],
+    "工程化": ["包管理", "配置", "CLI", "代码风格"],
+    "算法实现": ["双指针", "动态规划", "图算法", "复杂度分析"],
 }
 
 
@@ -378,8 +431,12 @@ def normalize_topic(topic: str) -> str:
     lowered = topic.lower()
     if "rag" in lowered or "检索" in topic:
         return "RAG"
-    if "hermes" in lowered:
-        return "Hermes"
+    if "harness" in lowered or "上下文工程" in topic or "jit" in lowered:
+        return "Harness"
+    if "大模型" in topic or "llm" in lowered or "模型" in topic:
+        return "大模型"
+    if "python" in lowered or "py" == lowered:
+        return "Python"
     return "Agent"
 
 

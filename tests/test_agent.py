@@ -10,6 +10,7 @@ from interview_agent.config import AgentConfig
 from interview_agent.ingest import ensure_workspace, ingest_notes
 from interview_agent.memory import MemoryManager
 from interview_agent.models import EvaluationReport
+from interview_agent.memory import KNOWLEDGE_POINTS, normalize_topic
 from interview_agent.retrieval import AgenticRetriever
 from interview_agent.skills import SkillManager
 from interview_agent.workflow import prepare_interview_question, run_interactive_turn, run_mock_session
@@ -48,6 +49,13 @@ def make_config(tmp: Path) -> AgentConfig:
 
 
 class AgentTests(unittest.TestCase):
+    def test_training_topics_are_current(self) -> None:
+        self.assertEqual(set(KNOWLEDGE_POINTS), {"RAG", "Agent", "Harness", "大模型", "Python"})
+        self.assertEqual(normalize_topic("Hermes"), "Agent")
+        self.assertEqual(normalize_topic("harness"), "Harness")
+        self.assertEqual(normalize_topic("大模型"), "大模型")
+        self.assertEqual(normalize_topic("python"), "Python")
+
     def test_ingest_and_rag_sources(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             cfg = make_config(Path(td))
@@ -138,6 +146,16 @@ class AgentTests(unittest.TestCase):
                 state = prepare_interview_question(cfg, "RAG", idx, "medium", "auto", True, used)
                 used.append(str(state["knowledge_point"]))
             self.assertEqual(len(used), len(set(used)))
+
+    def test_new_topics_can_prepare_questions(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = make_config(Path(td))
+            ensure_workspace(cfg)
+            ingest_notes(cfg)
+            for topic in ["Harness", "大模型", "Python"]:
+                state = prepare_interview_question(cfg, topic, 0, "medium", "auto", False, [])
+                self.assertEqual(state["topic"], topic)
+                self.assertIn(state["knowledge_point"], KNOWLEDGE_POINTS[topic])
 
     def test_skip_event_does_not_create_answer_history(self) -> None:
         with tempfile.TemporaryDirectory() as td:
