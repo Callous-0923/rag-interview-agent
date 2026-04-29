@@ -127,6 +127,17 @@ class AgentTests(unittest.TestCase):
             rerank = [item for item in gaps["items"] if item["knowledge_point"] == "Rerank"][0]
             self.assertTrue(rerank["suggestions"])
 
+    def test_auto_questions_cover_different_knowledge_points_in_round(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = make_config(Path(td))
+            ensure_workspace(cfg)
+            ingest_notes(cfg)
+            used: list[str] = []
+            for idx in range(3):
+                state = prepare_interview_question(cfg, "RAG", idx, "medium", "auto", True, used)
+                used.append(str(state["knowledge_point"]))
+            self.assertEqual(len(used), len(set(used)))
+
     def test_repeated_weakness_creates_pending_skill(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             cfg = make_config(Path(td))

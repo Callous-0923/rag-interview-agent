@@ -310,26 +310,37 @@ class MemoryManager:
             )
         return {"topic": topic, "items": points}
 
-    def select_knowledge_point(self, topic: str, difficulty: str = "medium", requested: str = "auto", review_first: bool = True) -> dict[str, Any]:
+    def select_knowledge_point(
+        self,
+        topic: str,
+        difficulty: str = "medium",
+        requested: str = "auto",
+        review_first: bool = True,
+        exclude_points: list[str] | None = None,
+    ) -> dict[str, Any]:
         topic = normalize_topic(topic)
         difficulty = normalize_difficulty(difficulty)
+        excluded = set(exclude_points or [])
         if requested and requested != "auto":
             kp = normalize_knowledge_point(topic, requested)
             return {"knowledge_point": kp, "is_review": False, "review_key": ""}
         if review_first:
-            due = self.get_due_reviews(topic, difficulty)
+            due = [item for item in self.get_due_reviews(topic, difficulty) if item.get("knowledge_point") not in excluded]
             if due:
                 item = due[0]
                 return {"knowledge_point": item["knowledge_point"], "is_review": True, "review_key": item["review_key"]}
         summary = self.get_progress_summary(topic)["topics"][topic]["knowledge_points"]
-        weak = [item for item in summary if item["status"] in {"weak", "improving"} and item["attempts"] > 0]
+        available = [item for item in summary if item["knowledge_point"] not in excluded]
+        if not available:
+            available = summary
+        weak = [item for item in available if item["status"] in {"weak", "improving"} and item["attempts"] > 0]
         if weak:
             item = sorted(weak, key=lambda value: (value["recent_score"], value["attempts"]))[0]
             return {"knowledge_point": item["knowledge_point"], "is_review": False, "review_key": ""}
-        unseen = [item for item in summary if item["attempts"] == 0]
+        unseen = [item for item in available if item["attempts"] == 0]
         if unseen:
             return {"knowledge_point": unseen[0]["knowledge_point"], "is_review": False, "review_key": ""}
-        item = sorted(summary, key=lambda value: value["recent_score"])[0]
+        item = sorted(available, key=lambda value: value["recent_score"])[0]
         return {"knowledge_point": item["knowledge_point"], "is_review": False, "review_key": ""}
 
     def build_working_summary(self, questions: list[str], answers: list[str]) -> str:

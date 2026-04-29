@@ -150,6 +150,7 @@ def prepare_interview_question(
     difficulty: str = "medium",
     knowledge_point: str = "auto",
     review_first: bool = True,
+    exclude_points: list[str] | None = None,
 ) -> GraphState:
     retriever = AgenticRetriever(config)
     llm = LLMClient.from_config(config)
@@ -157,7 +158,7 @@ def prepare_interview_question(
     memory = MemoryManager(config)
     topic = normalize_topic(topic)
     difficulty = normalize_difficulty(difficulty)
-    selection = memory.select_knowledge_point(topic, difficulty, knowledge_point or "auto", review_first)
+    selection = memory.select_knowledge_point(topic, difficulty, knowledge_point or "auto", review_first, exclude_points)
     selected_kp = selection["knowledge_point"]
     seed_pack = retriever.retrieve(f"{topic} {selected_kp}")
     question = _llm_interview_question(topic, round_index, seed_pack, llm, difficulty, selected_kp, bool(selection["is_review"]))

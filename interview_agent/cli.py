@@ -101,6 +101,7 @@ def interview(
     previous_turns = [event for event in log.read_events() if event.get("event") == "turn"]
     questions = [str(event["payload"].get("question", "")) for event in previous_turns]
     answers = [str(event["payload"].get("answer", "")) for event in previous_turns]
+    used_points = [str(event["payload"].get("knowledge_point", "")) for event in previous_turns if event["payload"].get("knowledge_point")]
     start_round = len(previous_turns)
     if start_round == 0:
         log.append(
@@ -120,7 +121,8 @@ def interview(
     for idx in range(start_round, rounds):
         typer.echo("")
         typer.echo(f"Round {idx + 1}/{rounds}")
-        question_state = prepare_interview_question(cfg, topic, idx, difficulty, knowledge_point, review_first)
+        exclude_points = used_points if knowledge_point == "auto" else []
+        question_state = prepare_interview_question(cfg, topic, idx, difficulty, knowledge_point, review_first, exclude_points)
         question = str(question_state["question"])
         marker = "review" if question_state.get("is_review") else "new"
         typer.echo(
@@ -147,6 +149,8 @@ def interview(
             continue
 
         result = run_interactive_turn(cfg, session_id, topic, idx, question_state, answer)
+        if result.get("knowledge_point"):
+            used_points.append(str(result["knowledge_point"]))
         questions.append(question)
         answers.append(answer)
         report = result["report"]

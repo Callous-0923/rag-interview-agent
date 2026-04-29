@@ -109,7 +109,21 @@ class _InterviewHandler(BaseHTTPRequestHandler):
         round_index = len(_turn_events(log))
         if round_index >= rounds:
             return {"complete": True, "round": round_index, "rounds": rounds}
-        state = prepare_interview_question(self.agent_config, topic, round_index, difficulty, knowledge_point, review_first)
+        used_points = [
+            str(event["payload"].get("knowledge_point", ""))
+            for event in _turn_events(log)
+            if event["payload"].get("knowledge_point")
+        ]
+        exclude_points = used_points if knowledge_point == "auto" else []
+        state = prepare_interview_question(
+            self.agent_config,
+            topic,
+            round_index,
+            difficulty,
+            knowledge_point,
+            review_first,
+            exclude_points,
+        )
         PENDING_QUESTIONS[session_id] = state
         evidence = (state.get("evidence_pack") or {}).get("evidence", [])
         return {

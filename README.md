@@ -47,6 +47,8 @@ python -m interview_agent.cli interview --topic RAG --rounds 5 --session <sessio
 python -m interview_agent.cli interview --topic RAG --knowledge-point Rerank --difficulty hard --rounds 3
 ```
 
+当 `--knowledge-point auto` 时，系统会在同一轮内优先覆盖不同知识点；只有艾宾浩斯复习到期时，才会在后续轮次重新出现同一知识点的变体题。
+
 查看成长、复习和补学建议：
 
 ```powershell
