@@ -44,6 +44,8 @@ class _InterviewHandler(BaseHTTPRequestHandler):
                 self._send_json(self._next_question(body))
             elif self.path == "/api/answer":
                 self._send_json(self._submit_answer(body))
+            elif self.path == "/api/skip":
+                self._send_json(self._skip_question(body))
             elif self.path == "/api/progress":
                 self._send_json(self._progress(body))
             elif self.path == "/api/gaps":
@@ -106,12 +108,12 @@ class _InterviewHandler(BaseHTTPRequestHandler):
         if not session_id:
             raise ValueError("session_id is required")
         log = SessionLog(self.agent_config, session_id)
-        round_index = len(_turn_events(log))
+        round_index = len(_turn_events(log)) + len(_skip_events(log))
         if round_index >= rounds:
             return {"complete": True, "round": round_index, "rounds": rounds}
         used_points = [
             str(event["payload"].get("knowledge_point", ""))
-            for event in _turn_events(log)
+            for event in _turn_events(log) + _skip_events(log)
             if event["payload"].get("knowledge_point")
         ]
         exclude_points = used_points if knowledge_point == "auto" else []
@@ -208,6 +210,40 @@ class _InterviewHandler(BaseHTTPRequestHandler):
             "session_file": str(log.path),
         }
 
+    def _skip_question(self, body: dict[str, Any]) -> dict[str, Any]:
+        topic = str(body.get("topic") or "RAG").strip() or "RAG"
+        rounds = max(1, min(20, int(body.get("rounds") or 5)))
+        session_id = str(body.get("session_id") or "").strip()
+        if not session_id:
+            raise ValueError("session_id is required")
+        question_state = PENDING_QUESTIONS.get(session_id)
+        if not question_state:
+            raise ValueError("no pending question; request /api/question first")
+        log = SessionLog(self.agent_config, session_id)
+        round_index = len(_turn_events(log)) + len(_skip_events(log))
+        log.append(
+            "skip",
+            {
+                "round": round_index + 1,
+                "question": question_state.get("question", ""),
+                "knowledge_point": question_state.get("knowledge_point", ""),
+                "question_type": question_state.get("question_type", ""),
+                "difficulty": question_state.get("difficulty", ""),
+                "is_review": question_state.get("is_review", False),
+            },
+        )
+        PENDING_QUESTIONS.pop(session_id, None)
+        complete = round_index + 1 >= rounds
+        if complete:
+            log.append("session_end", {"topic": topic, "rounds": rounds, "mode": "web"})
+        return {
+            "session_id": session_id,
+            "round": round_index + 1,
+            "rounds": rounds,
+            "complete": complete,
+            "skipped": True,
+        }
+
     def _progress(self, body: dict[str, Any]) -> dict[str, Any]:
         topic = str(body.get("topic") or "RAG").strip() or "RAG"
         data = MemoryManager(self.agent_config).get_progress_summary(topic)
@@ -237,6 +273,10 @@ class _InterviewHandler(BaseHTTPRequestHandler):
 
 def _turn_events(log: SessionLog) -> list[dict[str, Any]]:
     return [event for event in log.read_events() if event.get("event") == "turn"]
+
+
+def _skip_events(log: SessionLog) -> list[dict[str, Any]]:
+    return [event for event in log.read_events() if event.get("event") == "skip"]
 
 
 INDEX_HTML = r"""<!doctype html>
@@ -427,6 +467,7 @@ INDEX_HTML = r"""<!doctype html>
       <textarea id="answer" placeholder="Type your answer here..."></textarea>
       <div class="row" style="margin-top:12px">
         <button id="submitBtn" disabled>Submit Answer</button>
+        <button id="skipBtn" class="secondary" disabled>Skip</button>
       </div>
       <div class="panel">
         <strong>知识点掌握</strong>
@@ -434,7 +475,7 @@ INDEX_HTML = r"""<!doctype html>
       </div>
       <div class="panel">
         <strong>补学建议</strong>
-        <div id="gaps" class="meta">Start a session to load suggestions.</div>
+        <div id="gaps" class="meta">完成一道题后显示补学建议。</div>
       </div>
       <div class="evidence" id="evidence"></div>
       <div class="output" id="report">Review will appear here.</div>
@@ -453,6 +494,7 @@ INDEX_HTML = r"""<!doctype html>
       $("startBtn").disabled = isBusy;
       $("nextBtn").disabled = isBusy || !sessionId;
       $("submitBtn").disabled = isBusy || !sessionId;
+      $("skipBtn").disabled = isBusy || !sessionId;
     }
 
     async function post(path, body) {
@@ -527,8 +569,6 @@ INDEX_HTML = r"""<!doctype html>
     async function refreshProgress() {
       const progress = await post("/api/progress", {topic});
       renderProgress(progress);
-      const gaps = await post("/api/gaps", {topic});
-      renderGaps(gaps);
     }
 
     function escapeText(text) {
@@ -584,6 +624,7 @@ INDEX_HTML = r"""<!doctype html>
         $("question").textContent = `Round ${data.round}/${data.rounds} · ${data.knowledge_point} · ${data.difficulty} · ${marker}\n${data.question}`;
         $("answer").value = "";
         $("report").textContent = "Review will appear here.";
+        $("gaps").textContent = "完成本道题后显示补学建议。";
         $("sessionMeta").textContent = `${sessionId} · ${data.round - 1}/${data.rounds}`;
         renderEvidence(data.evidence);
       } catch (err) {
@@ -611,9 +652,32 @@ INDEX_HTML = r"""<!doctype html>
       }
     }
 
+    async function skipQuestion() {
+      try {
+        if (!sessionId) return;
+        setBusy(true, "Skipping question...");
+        const data = await post("/api/skip", {session_id: sessionId, topic, rounds});
+        $("answer").value = "";
+        $("report").textContent = "Skipped. This answer was not written to long-term memory.";
+        $("gaps").textContent = "跳过题目不会生成补学建议。";
+        $("sessionMeta").textContent = `${sessionId} · ${data.round}/${data.rounds}`;
+        if (data.complete) {
+          $("question").textContent = "Session complete.";
+          $("status").textContent = "Complete.";
+        } else {
+          $("status").textContent = "Skipped. Click Next.";
+        }
+      } catch (err) {
+        $("status").innerHTML = `<span class="error">${escapeText(err.message)}</span>`;
+      } finally {
+        setBusy(false);
+      }
+    }
+
     $("startBtn").addEventListener("click", startSession);
     $("nextBtn").addEventListener("click", nextQuestion);
     $("submitBtn").addEventListener("click", submitAnswer);
+    $("skipBtn").addEventListener("click", skipQuestion);
     $("topic").addEventListener("change", async () => {
       topic = $("topic").value.trim() || "RAG";
       try { await refreshProgress(); } catch (err) {}

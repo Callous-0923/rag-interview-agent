@@ -13,6 +13,7 @@ from interview_agent.models import EvaluationReport
 from interview_agent.retrieval import AgenticRetriever
 from interview_agent.skills import SkillManager
 from interview_agent.workflow import prepare_interview_question, run_interactive_turn, run_mock_session
+from interview_agent.sessions import SessionLog
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -137,6 +138,16 @@ class AgentTests(unittest.TestCase):
                 state = prepare_interview_question(cfg, "RAG", idx, "medium", "auto", True, used)
                 used.append(str(state["knowledge_point"]))
             self.assertEqual(len(used), len(set(used)))
+
+    def test_skip_event_does_not_create_answer_history(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            cfg = make_config(Path(td))
+            ensure_workspace(cfg)
+            log = SessionLog(cfg, "skip_test")
+            log.append("skip", {"round": 1, "question": "q", "knowledge_point": "Rerank"})
+            self.assertFalse((cfg.memory_dir / "answer_history.jsonl").read_text(encoding="utf-8").strip())
+            events = log.read_events()
+            self.assertEqual(events[0]["event"], "skip")
 
     def test_repeated_weakness_creates_pending_skill(self) -> None:
         with tempfile.TemporaryDirectory() as td:
